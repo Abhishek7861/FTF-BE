@@ -194,19 +194,31 @@ async def fetch_product_details(category: str, trend_id: str, trend_name: str, t
 @router.get("/fetch_and_store_product_details/")
 async def fetch_and_store_product_details(category: str, key: str = Depends(custom_key_param_checker)):
     try:
+        # Access the MongoDB client and database
         db = getDatabase()
 
-        # Get the list of trend IDs and names for the given category from the unique_trends collection
-        trend_data = db["unique_trends"].find(
-            {
+        # Aggregate and sort trends by the number of images in descending order
+        pipeline = [
+            {"$match": {
                 "data.category": category,
-                "data.name": {"$exists": True, "$ne": None}
-            },
-            {"data.id": 1, "data.name": 1, "gender": 1}
-        ).sort([("data.images.length", DESCENDING)]).limit(10)
+                "data.name": {"$exists": True, "$ne": None},
+                "data.images": {"$exists": True, "$ne": []}  # Filter out trends without images
+            }},
+            {"$project": {
+                "_id": 0,
+                "data.id": 1,
+                "data.name": 1,
+                "gender": 1,
+                "imageCount": {"$size": "$data.images"}
+            }},
+            {"$sort": {"imageCount": -1}},
+            {"$limit": 10}
+        ]
 
-        # Iterate through trend data and fetch product details
-        for trend in trend_data:
+        top_trends = list(db["unique_trends"].aggregate(pipeline))
+
+        # Iterate through the top trends and fetch product details
+        for trend in top_trends:
             trend_id = trend["data"]["id"]
             trend_name = trend["data"]["name"]
             trend_gender = trend["gender"]
